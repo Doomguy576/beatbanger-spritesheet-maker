@@ -540,7 +540,13 @@ class SpriteEditorUI:
     # ==================================================================
 
     def on_frame_change(self):
+        old_frame = self.current_frame
         self.current_frame = self.frame_var.get()
+        
+        # Сбрасываем кэш при смене кадра
+        if old_frame != self.current_frame:
+            self._invalidate_cache()
+        
         if self.current_frame in self.preset.head_settings:
             s = self.preset.head_settings[self.current_frame]
             self.scale_var.set(str(s["scale"]))

@@ -78,6 +78,7 @@ class OperationsManager:
                 self.editor.undo_stack.clear()
                 self.editor.redo_stack.clear()
                 self.editor.mark_clean()
+                self.editor._invalidate_cache()
                 self.editor.update_canvas()
 
     # ==================================================================
