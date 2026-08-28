@@ -557,8 +557,10 @@ class OperationsManager:
                 self._recolor_frame_from_points(frame_i)
 
     def rebuild_frame(self, fi):
-        """Перестроить кадр из оригинала + все штрихи"""
+        """Перестроить кадр из оригинала + все штрихи + все точки заливки"""
         self.editor.frames[fi] = self.editor.original_frames[fi].copy()
+        
+        # Применяем кисть/ластик
         if fi in self.editor.preset.brush_strokes:
             for stroke in self.editor.preset.brush_strokes[fi]:
                 for seg in stroke:
@@ -568,6 +570,14 @@ class OperationsManager:
                     else:
                         ImageProcessor.draw_brush_stroke(
                             self.editor.frames[fi], x1, y1, x2, y2, self._hex_to_rgba(ch), w)
+        
+        # Применяем точки заливки
+        if fi in self.editor.preset.fill_points:
+            for pt in self.editor.preset.fill_points[fi]:
+                x, y, ch = pt
+                ImageProcessor.flood_fill(self.editor.frames[fi], x, y, self._hex_to_rgba(ch))
+        
+        # Сбрасываем кэш увеличенного изображения
         self.editor._invalidate_cache()
 
     def _sync_head_ui(self, fi):
