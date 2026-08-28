@@ -40,6 +40,8 @@ class Preset:
         self.fill_points = {}
         self.head_settings = {}
         self.brush_strokes = {}
+        # Маски: {frame_idx: [[(x1,y1), (x2,y2), ...], ...]}
+        self.masks = {}
 
     def to_dict(self):
         return {
@@ -52,7 +54,8 @@ class Preset:
             "frame_height": self.frame_height,
             "fill_points": self.fill_points,
             "head_settings": self.head_settings,
-            "brush_strokes": self.brush_strokes
+            "brush_strokes": self.brush_strokes,
+            "masks": self.masks
         }
 
     @classmethod
@@ -67,6 +70,11 @@ class Preset:
         p.fill_points = {int(k): v for k, v in data.get("fill_points", {}).items()}
         p.head_settings = {int(k): v for k, v in data.get("head_settings", {}).items()}
         p.brush_strokes = {int(k): v for k, v in data.get("brush_strokes", {}).items()}
+        # Обратная совместимость — старые пресеты без masks
+        raw_masks = data.get("masks", {})
+        p.masks = {}
+        for k, polygons in raw_masks.items():
+            p.masks[int(k)] = [[tuple(pt) for pt in poly] for poly in polygons]
         return p
 
     def save(self, filepath=None):

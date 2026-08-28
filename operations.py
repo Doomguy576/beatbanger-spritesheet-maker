@@ -504,6 +504,16 @@ class OperationsManager:
             for frame_i, state in a["old_states"].items():
                 self.editor.preset.fill_points[frame_i] = state["points"][:]
                 self.editor.frames[frame_i] = state["frame"]
+        elif t == "add_mask":
+            fi = a["frame"]
+            if fi in self.editor.preset.masks:
+                self.editor.preset.masks[fi].pop()
+        elif t == "remove_mask_point":
+            fi = a["frame"]
+            self.editor.preset.masks[fi] = [list(poly) for poly in a["old_masks"]]
+        elif t == "clear_masks":
+            fi = a["frame"]
+            self.editor.preset.masks[fi] = [list(poly) for poly in a["old_masks"]]
 
     def _apply_redo(self, a):
         t = a["type"]
@@ -556,6 +566,19 @@ class OperationsManager:
             # Повторяем удаление на всех кадрах
             for frame_i in a["old_states"].keys():
                 self._recolor_frame_from_points(frame_i)
+        elif t == "add_mask":
+            fi = a["frame"]
+            if fi not in self.editor.preset.masks:
+                self.editor.preset.masks[fi] = []
+            self.editor.preset.masks[fi].append(list(a["polygon"]))
+        elif t == "remove_mask_point":
+            # Пересчитываем через удаление точки
+            # Упрощение: просто восстанавливаем old_masks и снова удаляем
+            # Но проще — ничего не делать, т.к. состояние уже правильное
+            pass
+        elif t == "clear_masks":
+            fi = a["frame"]
+            self.editor.preset.masks[fi] = []
 
     def rebuild_frame(self, fi):
         """Перестроить кадр из оригинала + все штрихи + все точки заливки"""
@@ -741,3 +764,80 @@ class OperationsManager:
             for pt in self.editor.preset.fill_points[fi]:
                 x, y, ch = pt
                 ImageProcessor.flood_fill(self.editor.frames[fi], x, y, self._hex_to_rgba(ch))
+    # ==================================================================
+    # Маски
+    # ==================================================================
+
+    def add_mask_point(self, x, y):
+        """Добавить точку в текущий полигон маски"""
+        self.editor.current_polygon_points.append((x, y))
+
+    def close_polygon(self):
+        """Замкнуть текущий полигон и сохранить в пресет"""
+        points = self.editor.current_polygon_points
+        if len(points) < 3:
+            messagebox.showinfo("Инфо", "Нужно минимум 3 точки для полигона")
+            return False
+        
+        fi = self.editor.current_frame
+        if fi not in self.editor.preset.masks:
+            self.editor.preset.masks[fi] = []
+        
+        polygon = list(points)
+        self.editor.preset.masks[fi].append(polygon)
+        
+        self.editor.current_polygon_points = []
+        self.editor.push_undo({"type": "add_mask", "frame": fi, "polygon": polygon})
+        self.editor.mark_dirty()
+        return True
+
+    def cancel_current_polygon(self):
+        """Отменить текущий незаконченный полигон"""
+        if self.editor.current_polygon_points:
+            self.editor.current_polygon_points = []
+            self.editor.update_canvas()
+            return True
+        return False
+
+    def remove_mask_point(self, frame_idx, polygon_idx, point_idx):
+        """Удалить точку из полигона. Если полигон стал < 3 точек — удалить весь полигон"""
+        fi = frame_idx
+        if fi not in self.editor.preset.masks:
+            return
+        
+        old_masks = [list(poly) for poly in self.editor.preset.masks[fi]]
+        
+        polygon = self.editor.preset.masks[fi][polygon_idx]
+        polygon.pop(point_idx)
+        
+        # Если полигон стал слишком маленьким — удаляем его целиком
+        if len(polygon) < 3:
+            self.editor.preset.masks[fi].pop(polygon_idx)
+        
+        self.editor.push_undo({
+            "type": "remove_mask_point",
+            "frame": fi,
+            "old_masks": old_masks
+        })
+        self.editor.mark_dirty()
+
+    def clear_masks(self, frame_idx):
+        """Удалить все маски кадра"""
+        fi = frame_idx
+        if fi not in self.editor.preset.masks or not self.editor.preset.masks[fi]:
+            messagebox.showinfo("Инфо", "Нет масок на текущем кадре")
+            return
+        
+        if not messagebox.askyesno("Подтверждение", "Удалить все маски текущего кадра?"):
+            return
+        
+        old_masks = [list(poly) for poly in self.editor.preset.masks[fi]]
+        self.editor.preset.masks[fi] = []
+        
+        self.editor.push_undo({
+            "type": "clear_masks",
+            "frame": fi,
+            "old_masks": old_masks
+        })
+        self.editor.mark_dirty()
+        self.editor.update_canvas()

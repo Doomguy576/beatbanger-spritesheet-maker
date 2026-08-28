@@ -59,6 +59,9 @@ class SpriteEditorUI:
         self.current_stroke_points = []
         self.brush_line_ids = []
 
+        # Маски
+        self.current_polygon_points = []  # Точки текущего незаконченного полигона
+
         # Undo/Redo
         self.undo_stack = []
         self.redo_stack = []
@@ -86,6 +89,9 @@ class SpriteEditorUI:
         self.root.bind("<Control-s>", lambda e: self.ops.save_preset())
         self.root.bind("<space>", lambda e: self._on_space_press())
         self.root.bind("<KeyRelease-space>", lambda e: self._on_space_release())
+        self.root.bind("m", lambda e: self._set_mode("mask"))
+        self.root.bind("<Return>", lambda e: self._on_enter_press())
+        self.root.bind("<Escape>", lambda e: self._on_escape_press())
         
         # Переключение режимов
         self.root.bind("a", lambda e: self._set_mode("fill"))
@@ -200,11 +206,12 @@ class SpriteEditorUI:
             self.frame_radios.append(rb)
 
 
-        # Режимы (добавить "Пипетка")
+        # Режимы
         mf = ttk.Frame(p)
         mf.pack(fill=tk.X, pady=5)
         ttk.Label(mf, text="Режим:").pack(side=tk.LEFT, padx=5)
-        for txt, val in [("Заливка", "fill"), ("Кисть", "brush"), ("Ластик", "eraser"), ("Пипетка", "picker")]:
+        for txt, val in [("Заливка", "fill"), ("Кисть", "brush"), ("Ластик", "eraser"),
+                         ("Пипетка", "picker"), ("Маска", "mask")]:
             ttk.Radiobutton(mf, text=txt, variable=self.mode, value=val,
                             command=self.on_mode_change).pack(side=tk.LEFT, padx=2)
 
@@ -299,6 +306,14 @@ class SpriteEditorUI:
                         variable=self.use_dilate, command=self.update_canvas).pack(anchor=tk.W, padx=5)
         ttk.Checkbutton(p, text="Удалять точки на всех кадрах",
                         variable=self.delete_on_all_frames).pack(anchor=tk.W, padx=5)
+
+        # Маски
+        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(p, text="Маски (поверх головы)", font=("Arial", 10, "bold")).pack(pady=5)
+        ttk.Label(p, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить точку, Esc — отменить",
+                  font=("Arial", 8), justify=tk.LEFT).pack(anchor=tk.W, padx=5)
+        ttk.Button(p, text="Очистить маски кадра",
+                   command=lambda: self.ops.clear_masks(self.current_frame)).pack(fill=tk.X, pady=2)
 
         # Точки заливки
         ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
@@ -410,13 +425,16 @@ class SpriteEditorUI:
         self.draw_points()
 
     def get_display_frame(self, fi, always_head=False):
-        """Получить кадр для отображения (только голова, заливка уже в кадре)"""
-        frame = self.frames[fi].copy()
-
+        """Получить кадр для отображения"""
+        source_frame = self.frames[fi].copy()
+        
         if self.use_dilate.get():
-            frame = ImageProcessor.dilate_alpha(frame, radius=1)
-
-        # Голова
+            source_frame = ImageProcessor.dilate_alpha(source_frame, radius=1)
+        
+        # Начинаем с source_frame
+        frame = source_frame.copy()
+        
+        # Вставляем голову поверх
         if self.head_image and fi in self.preset.head_settings:
             if always_head or fi == self.current_frame:
                 s = self.preset.head_settings[fi]
@@ -424,6 +442,11 @@ class SpriteEditorUI:
                     frame, self.head_image,
                     s["scale"], s["offset_x"], s["offset_y"],
                     s.get("rotation", 0))
+        
+        # Применяем маски поверх головы
+        if fi in self.preset.masks and self.preset.masks[fi]:
+            frame = ImageProcessor.apply_masks(frame, source_frame, self.preset.masks[fi])
+        
         return frame
 
     def draw_points(self):
@@ -431,13 +454,45 @@ class SpriteEditorUI:
             return
         ox, oy = self.canvas_offset_x, self.canvas_offset_y
         sf = self.scale_factor
-
+        
+        # Точки заливки
         if self.current_frame in self.preset.fill_points:
             for pt in self.preset.fill_points[self.current_frame]:
                 cx = int(pt[0] * sf) + ox
                 cy = int(pt[1] * sf) + oy
                 self.canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
                                         fill=pt[2], outline="white", width=2)
+        
+        # Маски текущего кадра (замкнутые полигоны)
+        if self.current_frame in self.preset.masks:
+            for polygon in self.preset.masks[self.current_frame]:
+                if len(polygon) < 3:
+                    continue
+                # Полупрозрачная заливка
+                screen_pts = []
+                for x, y in polygon:
+                    screen_pts.extend([int(x * sf) + ox, int(y * sf) + oy])
+                self.canvas.create_polygon(screen_pts, outline="#00FF00",
+                                           fill="#00FF00", stipple="gray25", width=2)
+                # Точки полигона
+                for x, y in polygon:
+                    cx = int(x * sf) + ox
+                    cy = int(y * sf) + oy
+                    self.canvas.create_oval(cx-3, cy-3, cx+3, cy+3,
+                                            fill="#00FF00", outline="white", width=1)
+        
+        # Текущий незаконченный полигон
+        if self.current_polygon_points:
+            screen_pts = []
+            for x, y in self.current_polygon_points:
+                screen_pts.extend([int(x * sf) + ox, int(y * sf) + oy])
+            if len(screen_pts) >= 4:
+                self.canvas.create_line(screen_pts, fill="#FFFF00", width=2)
+            for x, y in self.current_polygon_points:
+                cx = int(x * sf) + ox
+                cy = int(y * sf) + oy
+                self.canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
+                                        fill="#FFFF00", outline="white", width=2)
 
     def canvas_to_frame(self, ex, ey):
         # Учитываем zoom и pan
@@ -458,17 +513,19 @@ class SpriteEditorUI:
         x, y = self.canvas_to_frame(event.x, event.y)
         if not self.in_bounds(x, y):
             return
-
+        
         m = self.mode.get()
         if m == "fill":
             self.ops.add_fill_point(x, y)
             self.update_canvas()
         elif m == "picker":
-            # Взять цвет из кадра
             pixel = self.frames[self.current_frame].getpixel((x, y))
-            if len(pixel) == 4 and pixel[3] > 0:  # Если не прозрачный
+            if len(pixel) == 4 and pixel[3] > 0:
                 color = f"#{pixel[0]:02X}{pixel[1]:02X}{pixel[2]:02X}"
                 self.set_color(color)
+        elif m == "mask":
+            self.ops.add_mask_point(x, y)
+            self.update_canvas()
         elif m in ("brush", "eraser"):
             self.last_x, self.last_y = x, y
             self.current_stroke_points = []
@@ -515,22 +572,37 @@ class SpriteEditorUI:
             return
         x, y = self.canvas_to_frame(event.x, event.y)
         thresh = 15 / self.scale_factor
-
+        
+        m = self.mode.get()
+        
+        # В режиме маски — удаляем точки полигонов
+        if m == "mask":
+            best_poly, best_pt, best_d = -1, -1, float('inf')
+            if self.current_frame in self.preset.masks:
+                for pi, polygon in enumerate(self.preset.masks[self.current_frame]):
+                    for ti, (px, py) in enumerate(polygon):
+                        d = ((px - x) ** 2 + (py - y) ** 2) ** 0.5
+                        if d < best_d and d < thresh:
+                            best_d, best_poly, best_pt = d, pi, ti
+            
+            if best_poly >= 0:
+                self.ops.remove_mask_point(self.current_frame, best_poly, best_pt)
+                self.update_canvas()
+            return
+        
+        # В остальных режимах — удаляем точки заливки
         best_i, best_d = -1, float('inf')
-
         if self.current_frame in self.preset.fill_points:
             for i, pt in enumerate(self.preset.fill_points[self.current_frame]):
                 d = ((pt[0]-x)**2 + (pt[1]-y)**2)**0.5
                 if d < best_d and d < thresh:
                     best_d, best_i = d, i
-
+        
         if best_i >= 0:
             if self.delete_on_all_frames.get():
-                # Удаляем точки с такими же координатами на всех кадрах
                 pt = self.preset.fill_points[self.current_frame][best_i]
                 self.ops.remove_fill_point_all_frames(pt[0], pt[1])
             else:
-                # Удаляем только на текущем кадре
                 self.ops.remove_fill_point(self.current_frame, best_i)
             self.mark_dirty()
             self.update_canvas()
@@ -556,10 +628,8 @@ class SpriteEditorUI:
         self.update_canvas()
 
     def on_mode_change(self):
-        if self.is_panning or self.space_pressed:
-            self.canvas.config(cursor="fleur")
-            return
-        cursors = {"fill": "cross", "brush": "pencil", "eraser": "pencil", "picker": "crosshair"}
+        cursors = {"fill": "cross", "brush": "pencil", "eraser": "pencil",
+                   "picker": "crosshair", "mask": "pencil"}
         self.canvas.config(cursor=cursors.get(self.mode.get(), "arrow"))
 
     # ==================================================================
@@ -740,6 +810,9 @@ class SpriteEditorUI:
 
     def _set_mode(self, mode):
         """Установить режим из горячей клавиши"""
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, ttk.Entry)):
+            return
         self.mode.set(mode)
         self.on_mode_change()
 
@@ -886,3 +959,23 @@ class SpriteEditorUI:
         self.view_y = fy - (cy - (ch - nh) / 2) / new_scale
         
         self.update_canvas()
+    # ==================================================================
+    # Маски — вспомогательные методы
+    # ==================================================================
+
+    def _on_enter_press(self):
+        """Enter — замкнуть текущий полигон маски"""
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, ttk.Entry)):
+            return
+        if self.mode.get() != "mask":
+            return
+        if self.ops.close_polygon():
+            self.update_canvas()
+
+    def _on_escape_press(self):
+        """Esc — отменить текущий полигон"""
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, ttk.Entry)):
+            return
+        self.ops.cancel_current_polygon()

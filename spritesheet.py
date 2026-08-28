@@ -6,6 +6,28 @@ from PIL import Image, ImageDraw, ImageFilter
 class ImageProcessor:
 
     @staticmethod
+    def apply_masks(frame_with_head, source_frame, masks):
+        """Наложить маски поверх кадра с головой.
+        
+        frame_with_head — кадр с уже вставленной головой
+        source_frame — исходный кадр (с кистью/заливкой, без головы)
+        masks — список полигонов [[(x,y), ...], ...]
+        """
+        if not masks:
+            return frame_with_head
+        
+        result = frame_with_head.copy()
+        for polygon in masks:
+            if len(polygon) < 3:
+                continue
+            # Создаём L-маску: 255 внутри полигона, 0 снаружи
+            mask_img = Image.new("L", source_frame.size, 0)
+            ImageDraw.Draw(mask_img).polygon(polygon, fill=255)
+            # Композит: где mask=255 — source_frame, где mask=0 — frame_with_head
+            result = Image.composite(source_frame, result, mask_img)
+        return result
+
+    @staticmethod
     def split_spritesheet(image, cols, rows):
         fw = image.width // cols
         fh = image.height // rows
