@@ -51,9 +51,62 @@ class ImageProcessor:
         return Image.merge("RGBA", (r, g, b, a.filter(ImageFilter.MaxFilter(radius * 2 + 1))))
 
     @staticmethod
-    def flood_fill(image, x, y, color_rgba, thresh=50):
-        if 0 <= x < image.width and 0 <= y < image.height:
-            ImageDraw.floodfill(image, (x, y), color_rgba, thresh=thresh)
+    def flood_fill(image, x, y, color_rgba, thresh=0):
+        """Собственный flood fill для RGBA.
+        Заливает области, похожие на стартовый пиксель."""
+        if not (0 <= x < image.width and 0 <= y < image.height):
+            return image
+        
+        pixels = image.load()
+        width, height = image.size
+        
+        start_pixel = pixels[x, y]
+        if len(start_pixel) != 4:
+            return image
+        
+        # Определяем, что будем заливать:
+        # - Если alpha=0 — заливаем прозрачные пиксели
+        # - Если alpha>0 — заливаем пиксели похожего цвета
+        from collections import deque
+        queue = deque([(x, y)])
+        visited = set()
+        
+        while queue:
+            cx, cy = queue.popleft()
+            if (cx, cy) in visited:
+                continue
+            if not (0 <= cx < width and 0 <= cy < height):
+                continue
+            
+            pixel = pixels[cx, cy]
+            if len(pixel) != 4:
+                continue
+            
+            # Проверяем, похож ли пиксель на стартовый
+            if start_pixel[3] == 0:
+                # Стартовый пиксель прозрачный — заливаем только прозрачные
+                if pixel[3] != 0:  # Если alpha != 0 — это контур или другая заливка
+                    continue
+            else:
+                # Стартовый пиксель цветной — заливаем похожие по цвету
+                # Сравниваем RGBA, но с допуском для alpha
+                diff = (abs(pixel[0] - start_pixel[0]) +
+                       abs(pixel[1] - start_pixel[1]) +
+                       abs(pixel[2] - start_pixel[2]) +
+                       abs(pixel[3] - start_pixel[3]))
+                if diff > thresh * 4:  # Порог различия
+                    continue
+            
+            # Закрашиваем
+            pixels[cx, cy] = color_rgba
+            visited.add((cx, cy))
+            
+            # Добавляем соседей
+            queue.append((cx+1, cy))
+            queue.append((cx-1, cy))
+            queue.append((cx, cy+1))
+            queue.append((cx, cy-1))
+        
         return image
 
     @staticmethod
