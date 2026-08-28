@@ -1,0 +1,12 @@
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Папки сборки PyInstaller (EXE)
+build/
+dist/
+*.spec
+
+# Папка с пользовательскими JSON-файлами
+# (Замените "my_json_folder" на реальное имя вашей папки с JSON)
+presets/
