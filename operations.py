@@ -620,7 +620,7 @@ class OperationsManager:
             return
         total = len(self.editor.frames)
         self.editor.current_frame = (self.editor.current_frame + 1) % total
-        self.editor.frame_var.set(self.editor.current_frame)
+        self.editor.frame_var.set(self.editor.current_frame)  # ← ПРАВИЛЬНО
         self.editor.update_canvas()
         try:
             delay = int(self.editor.anim_delay_var.get())
