@@ -419,6 +419,7 @@ class OperationsManager:
             self.editor.preset.head_settings[fi] = nv
             self.editor.push_undo({"type": "head", "frame": fi, "old": ov, "new": nv})
             self.editor.mark_dirty()
+            self.editor._invalidate_cache()
             self.editor.update_canvas()
         except ValueError:
             messagebox.showerror("Ошибка", "Неверные значения")
@@ -437,6 +438,7 @@ class OperationsManager:
                 self.editor.preset.head_settings[i] = dict(nv)
             self.editor.push_undo({"type": "head_all", "olds": olds, "new": nv, "total": total})
             self.editor.mark_dirty()
+            self.editor._invalidate_cache()
             self.editor.update_canvas()
         except ValueError:
             messagebox.showerror("Ошибка", "Неверные значения")
