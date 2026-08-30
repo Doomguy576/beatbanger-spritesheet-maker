@@ -74,6 +74,9 @@ class SpriteEditorUI:
         self.use_dilate = tk.BooleanVar(value=False)
         self.delete_on_all_frames = tk.BooleanVar(value=False)
 
+        # Видимость головы
+        self.head_visible = True
+
         # Флаг несохранённых изменений
         self.is_dirty = False
 
@@ -92,6 +95,7 @@ class SpriteEditorUI:
         self.root.bind("m", lambda e: self._set_mode("mask"))
         self.root.bind("<Return>", lambda e: self._on_enter_press())
         self.root.bind("<Escape>", lambda e: self._on_escape_press())
+        self.root.bind("e", lambda e: self._toggle_head_visibility())
         
         # Переключение режимов
         self.root.bind("a", lambda e: self._set_mode("fill"))
@@ -434,8 +438,8 @@ class SpriteEditorUI:
         # Начинаем с source_frame
         frame = source_frame.copy()
         
-        # Вставляем голову поверх
-        if self.head_image and fi in self.preset.head_settings:
+        # Вставляем голову поверх (если видима)
+        if self.head_visible and self.head_image and fi in self.preset.head_settings:
             if always_head or fi == self.current_frame:
                 s = self.preset.head_settings[fi]
                 frame = ImageProcessor.insert_head(
@@ -979,3 +983,14 @@ class SpriteEditorUI:
         if isinstance(focused, (tk.Entry, ttk.Entry)):
             return
         self.ops.cancel_current_polygon()
+
+    def _toggle_head_visibility(self):
+        """Переключить видимость головы (клавиша E)"""
+        # Не переключаем, если фокус в поле ввода
+        focused = self.root.focus_get()
+        if isinstance(focused, (tk.Entry, ttk.Entry)):
+            return
+        
+        self.head_visible = not self.head_visible
+        self._invalidate_cache()
+        self.update_canvas()
