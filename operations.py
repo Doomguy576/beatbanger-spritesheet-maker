@@ -787,6 +787,7 @@ class OperationsManager:
         self.editor.current_polygon_points = []
         self.editor.push_undo({"type": "add_mask", "frame": fi, "polygon": polygon})
         self.editor.mark_dirty()
+        self.editor._invalidate_cache()
         return True
 
     def cancel_current_polygon(self):
@@ -818,6 +819,7 @@ class OperationsManager:
             "old_masks": old_masks
         })
         self.editor.mark_dirty()
+        self.editor._invalidate_cache()
 
     def clear_masks(self, frame_idx):
         """Удалить все маски кадра"""
@@ -838,4 +840,5 @@ class OperationsManager:
             "old_masks": old_masks
         })
         self.editor.mark_dirty()
+        self.editor._invalidate_cache()
         self.editor.update_canvas()

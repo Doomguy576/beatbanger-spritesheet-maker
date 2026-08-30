@@ -2,9 +2,9 @@
 
 import tkinter as tk
 from tkinter import ttk, filedialog, colorchooser, messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 
-from config import PRESETS_DIR, CANVAS_MAX_SIZE, MAX_UNDO
+from config import PRESETS_DIR, CANVAS_MAX_SIZE, MAX_UNDO, Preset
 from operations import OperationsManager
 from spritesheet import ImageProcessor
 from config import load_palette
@@ -18,7 +18,7 @@ class SpriteEditorUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         # Состояние
-        self.preset = None
+        self.preset = Preset()
         self.base_image = None
         self.head_image = None
         self.frames = []
@@ -60,7 +60,9 @@ class SpriteEditorUI:
         self.brush_line_ids = []
 
         # Маски
-        self.current_polygon_points = []  # Точки текущего незаконченного полигона
+        self.current_polygon_points = [] # точки полигона
+        self.mask_opacity_var = tk.IntVar(value=50)  # 0-100%
+        self._mask_overlay = None
 
         # Undo/Redo
         self.undo_stack = []
@@ -325,6 +327,17 @@ class SpriteEditorUI:
         ttk.Label(p, text="Маски (поверх головы)", font=("Arial", 10, "bold")).pack(pady=5)
         ttk.Label(p, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить последнюю точку\nEsc — отменить полигон",
                   font=("Arial", 8), justify=tk.LEFT).pack(anchor=tk.W, padx=5)
+        
+        # Прозрачность маски
+        ttk.Label(p, text="Прозрачность маски:").pack(anchor=tk.W, padx=5, pady=(10, 2))
+        opacity_frame = ttk.Frame(p)
+        opacity_frame.pack(fill=tk.X, padx=5)
+        self.mask_opacity_scale = tk.Scale(opacity_frame, from_=0, to=100, orient=tk.HORIZONTAL,
+                                            variable=self.mask_opacity_var, length=200, showvalue=1,
+                                            command=lambda v: self.update_canvas())
+        self.mask_opacity_scale.pack(side=tk.LEFT)
+        ttk.Label(opacity_frame, text="%").pack(side=tk.LEFT, padx=2)
+        
         ttk.Button(p, text="Очистить маски кадра",
                    command=lambda: self.ops.clear_masks(self.current_frame)).pack(fill=tk.X, pady=2)
 
@@ -439,6 +452,9 @@ class SpriteEditorUI:
 
     def get_display_frame(self, fi, always_head=False):
         """Получить кадр для отображения"""
+        if not self.frames or fi >= len(self.frames):
+            return Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+        
         source_frame = self.frames[fi].copy()
         
         if self.use_dilate.get():
@@ -476,36 +492,66 @@ class SpriteEditorUI:
                 self.canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
                                         fill=pt[2], outline="white", width=2)
         
-        # Маски текущего кадра (замкнутые полигоны)
+        # Маски через PIL (настоящая прозрачность)
+        opacity = getattr(self, 'mask_opacity_var', None)
+        opacity_val = opacity.get() if opacity else 50
+        alpha = int(255 * opacity_val / 100)  # 0% = 0, 100% = 255
+        
+        polygons_to_draw = []
+        
+        # Замкнутые полигоны (зелёные)
         if self.current_frame in self.preset.masks:
             for polygon in self.preset.masks[self.current_frame]:
                 if len(polygon) < 3:
                     continue
-                # Полупрозрачная заливка
                 screen_pts = []
                 for x, y in polygon:
                     screen_pts.extend([int(x * sf) + ox, int(y * sf) + oy])
-                self.canvas.create_polygon(screen_pts, outline="#00FF00",
-                                           fill="#00FF00", stipple="gray25", width=2)
-                # Точки полигона
-                for x, y in polygon:
-                    cx = int(x * sf) + ox
-                    cy = int(y * sf) + oy
-                    self.canvas.create_oval(cx-3, cy-3, cx+3, cy+3,
-                                            fill="#00FF00", outline="white", width=1)
+                polygons_to_draw.append(("closed", screen_pts, polygon))
         
-        # Текущий незаконченный полигон
-        if self.current_polygon_points:
+        # Текущий незаконченный полигон (жёлтый)
+        if hasattr(self, 'current_polygon_points') and self.current_polygon_points:
             screen_pts = []
             for x, y in self.current_polygon_points:
                 screen_pts.extend([int(x * sf) + ox, int(y * sf) + oy])
             if len(screen_pts) >= 4:
-                self.canvas.create_line(screen_pts, fill="#FFFF00", width=2)
-            for x, y in self.current_polygon_points:
-                cx = int(x * sf) + ox
-                cy = int(y * sf) + oy
-                self.canvas.create_oval(cx-4, cy-4, cx+4, cy+4,
-                                        fill="#FFFF00", outline="white", width=2)
+                polygons_to_draw.append(("open", screen_pts, self.current_polygon_points))
+        
+        # Рисуем маски через PIL для настоящей прозрачности
+        if polygons_to_draw:
+            self.canvas.update_idletasks()
+            cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+            
+            overlay = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
+            
+            for ptype, screen_pts, original_pts in polygons_to_draw:
+                if ptype == "closed":
+                    if alpha > 0:
+                        fill_color = (0, 255, 0, alpha)
+                        overlay_draw.polygon(screen_pts, fill=fill_color, outline=(0, 255, 0, 255))
+                    else:
+                        overlay_draw.polygon(screen_pts, outline=(0, 255, 0, 255))
+                    for x, y in original_pts:
+                        cx = int(x * sf) + ox
+                        cy = int(y * sf) + oy
+                        overlay_draw.ellipse([cx-3, cy-3, cx+3, cy+3], 
+                                            fill=(0, 255, 0, 255), outline=(255, 255, 255, 255))
+                elif ptype == "open":
+                    if len(screen_pts) >= 4:
+                        overlay_draw.line(screen_pts, fill=(255, 255, 0, 255), width=2)
+                    for x, y in original_pts:
+                        cx = int(x * sf) + ox
+                        cy = int(y * sf) + oy
+                        overlay_draw.ellipse([cx-4, cy-4, cx+4, cy+4], 
+                                            fill=(255, 255, 0, 255), outline=(255, 255, 255, 255))
+            
+            overlay_photo = ImageTk.PhotoImage(overlay)
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=overlay_photo)
+            self._mask_overlay = overlay_photo
+        else:
+            if hasattr(self, '_mask_overlay'):
+                del self._mask_overlay
 
     def canvas_to_frame(self, ex, ey):
         # Учитываем zoom и pan
@@ -538,6 +584,7 @@ class SpriteEditorUI:
                 self.set_color(color)
         elif m == "mask":
             self.ops.add_mask_point(x, y)
+            self._invalidate_cache()
             self.update_canvas()
         elif m in ("brush", "eraser"):
             self.last_x, self.last_y = x, y
