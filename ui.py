@@ -323,7 +323,7 @@ class SpriteEditorUI:
         # Маски
         ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         ttk.Label(p, text="Маски (поверх головы)", font=("Arial", 10, "bold")).pack(pady=5)
-        ttk.Label(p, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить точку, Esc — отменить",
+        ttk.Label(p, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить последнюю точку\nEsc — отменить полигон",
                   font=("Arial", 8), justify=tk.LEFT).pack(anchor=tk.W, padx=5)
         ttk.Button(p, text="Очистить маски кадра",
                    command=lambda: self.ops.clear_masks(self.current_frame)).pack(fill=tk.X, pady=2)
@@ -588,8 +588,16 @@ class SpriteEditorUI:
         
         m = self.mode.get()
         
-        # В режиме маски — удаляем точки полигонов
+        # В режиме маски
         if m == "mask":
+            # Сначала проверяем текущий незаконченный полигон
+            if self.current_polygon_points:
+                # Удаляем последнюю точку
+                self.current_polygon_points.pop()
+                self.update_canvas()
+                return
+            
+            # Если текущего полигона нет — удаляем точки замкнутых полигонов
             best_poly, best_pt, best_d = -1, -1, float('inf')
             if self.current_frame in self.preset.masks:
                 for pi, polygon in enumerate(self.preset.masks[self.current_frame]):
