@@ -274,63 +274,88 @@ class SpriteEditorUI:
         self.canvas.bind("<Button-5>", self._on_mouse_wheel)  # Linux
 
     def create_right_panel(self, p):
+        # Создаём Canvas со скроллом для правой панели
+        right_canvas = tk.Canvas(p, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(p, orient=tk.VERTICAL, command=right_canvas.yview)
+        
+        # Фрейм внутри Canvas, где будут все виджеты
+        self.right_inner_frame = ttk.Frame(right_canvas)
+        
+        # Привязываем скролл
+        right_canvas.configure(yscrollcommand=scrollbar.set)
+        right_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Размещаем inner_frame внутри canvas
+        self.right_inner_frame_id = right_canvas.create_window((0, 0), window=self.right_inner_frame, anchor=tk.NW)
+        
+        # Обновляем scrollregion при изменении размера
+        self.right_inner_frame.bind("<Configure>", 
+            lambda e: right_canvas.configure(scrollregion=right_canvas.bbox("all")))
+        
+        # Прокрутка колёсиком мыши
+        def _on_mousewheel(event):
+            right_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        right_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        right_canvas.bind_all("<Button-4>", lambda e: right_canvas.yview_scroll(-1, "units"))
+        right_canvas.bind_all("<Button-5>", lambda e: right_canvas.yview_scroll(1, "units"))
+        
+        # Используем right_inner_frame вместо p для всех виджетов
+        inner = self.right_inner_frame
+        
         # Цвет
-        ttk.Label(p, text="Цвет", font=("Arial", 10, "bold")).pack(pady=5)
-        cf = ttk.Frame(p)
+        ttk.Label(inner, text="Цвет", font=("Arial", 10, "bold")).pack(pady=5)
+        cf = ttk.Frame(inner)
         cf.pack(fill=tk.X, pady=5)
         self.color_preview = tk.Label(cf, bg=self.current_color, width=5, relief=tk.SUNKEN)
         self.color_preview.pack(side=tk.LEFT, padx=5)
         ttk.Button(cf, text="Выбрать", command=self.choose_color).pack(side=tk.LEFT, padx=5)
         ttk.Button(cf, text="Палитра", command=self.open_palette_window).pack(side=tk.LEFT, padx=5)
-
-
-        palette_frame = ttk.Frame(p)
-        palette_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(palette_frame, text="Палитра:", font=("Arial", 9)).pack(anchor=tk.W, padx=5)
-
-        rf = ttk.Frame(p)
+        
+        rf = ttk.Frame(inner)
         rf.pack(fill=tk.X, pady=5)
         for lbl, var, col in [("R:", "r_var", 0), ("G:", "g_var", 2), ("B:", "b_var", 4)]:
             ttk.Label(rf, text=lbl).grid(row=0, column=col, padx=2)
             sv = tk.StringVar(value="255" if col == 0 else "0")
             setattr(self, var, sv)
             ttk.Entry(rf, textvariable=sv, width=5).grid(row=0, column=col + 1, padx=2)
-        ttk.Button(p, text="Применить RGB", command=self.apply_rgb).pack(pady=5)
-
+        ttk.Button(inner, text="Применить RGB", command=self.apply_rgb).pack(pady=5)
+        
         # Кисть/Ластик
-        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(p, text="Кисть/Ластик", font=("Arial", 10, "bold")).pack(pady=5)
-        bf = ttk.Frame(p)
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(inner, text="Кисть/Ластик", font=("Arial", 10, "bold")).pack(pady=5)
+        bf = ttk.Frame(inner)
         bf.pack(fill=tk.X, pady=5)
         ttk.Label(bf, text="Толщина:").pack(side=tk.LEFT, padx=5)
         self.brush_width_var = tk.StringVar(value="3")
         ttk.Entry(bf, textvariable=self.brush_width_var, width=5).pack(side=tk.LEFT, padx=5)
-
+        
         # Опции
-        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(p, text="Опции", font=("Arial", 10, "bold")).pack(pady=5)
-        ttk.Checkbutton(p, text="Авто-расширение контура",
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(inner, text="Опции", font=("Arial", 10, "bold")).pack(pady=5)
+        ttk.Checkbutton(inner, text="Авто-расширение контура",
                         variable=self.use_dilate, command=self.update_canvas).pack(anchor=tk.W, padx=5)
-        ttk.Checkbutton(p, text="Удалять точки на всех кадрах",
+        ttk.Checkbutton(inner, text="Удалять точки на всех кадрах",
                         variable=self.delete_on_all_frames).pack(anchor=tk.W, padx=5)
         
-        # Порог заливки
-        ttk.Label(p, text="Порог заливки (alpha):").pack(anchor=tk.W, padx=5, pady=(10, 2))
-        alpha_frame = ttk.Frame(p)
-        alpha_frame.pack(fill=tk.X, padx=5)
-        self.alpha_scale = tk.Scale(alpha_frame, from_=0, to=255, orient=tk.HORIZONTAL,
-                                     variable=self.alpha_threshold_var, length=200, showvalue=1)
-        self.alpha_scale.pack(side=tk.LEFT)
-
+        # Точки заливки
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(inner, text="Точки заливки", font=("Arial", 10, "bold")).pack(pady=5)
+        ttk.Button(inner, text="Применить ко всем кадрам",
+                   command=self.ops.apply_fill_to_all_frames).pack(fill=tk.X, pady=2)
+        ttk.Button(inner, text="Очистить точки кадра",
+                   command=self.ops.clear_fill_points).pack(fill=tk.X, pady=2)
+        ttk.Button(inner, text="Группы заливок",
+                   command=self.open_fill_groups_window).pack(fill=tk.X, pady=2)
+        
         # Маски
-        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(p, text="Маски (поверх головы)", font=("Arial", 10, "bold")).pack(pady=5)
-        ttk.Label(p, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить последнюю точку\nEsc — отменить полигон",
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(inner, text="Маски (поверх головы)", font=("Arial", 10, "bold")).pack(pady=5)
+        ttk.Label(inner, text="ЛКМ — точка, Enter — замкнуть\nПКМ — удалить последнюю точку\nEsc — отменить полигон",
                   font=("Arial", 8), justify=tk.LEFT).pack(anchor=tk.W, padx=5)
         
-        # Прозрачность маски
-        ttk.Label(p, text="Прозрачность маски:").pack(anchor=tk.W, padx=5, pady=(10, 2))
-        opacity_frame = ttk.Frame(p)
+        ttk.Label(inner, text="Прозрачность маски:").pack(anchor=tk.W, padx=5, pady=(10, 2))
+        opacity_frame = ttk.Frame(inner)
         opacity_frame.pack(fill=tk.X, padx=5)
         self.mask_opacity_scale = tk.Scale(opacity_frame, from_=0, to=100, orient=tk.HORIZONTAL,
                                             variable=self.mask_opacity_var, length=200, showvalue=1,
@@ -338,32 +363,22 @@ class SpriteEditorUI:
         self.mask_opacity_scale.pack(side=tk.LEFT)
         ttk.Label(opacity_frame, text="%").pack(side=tk.LEFT, padx=2)
         
-        ttk.Button(p, text="Очистить маски кадра",
+        ttk.Button(inner, text="Очистить маски кадра",
                    command=lambda: self.ops.clear_masks(self.current_frame)).pack(fill=tk.X, pady=2)
-
-        # Точки заливки
-        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(p, text="Точки заливки", font=("Arial", 10, "bold")).pack(pady=5)
-        ttk.Button(p, text="Применить ко всем кадрам",
-                   command=self.ops.apply_fill_to_all_frames).pack(fill=tk.X, pady=2)
-        ttk.Button(p, text="Очистить точки кадра",
-                   command=self.ops.clear_fill_points).pack(fill=tk.X, pady=2)
-        ttk.Button(p, text="Группы заливок",
-                   command=self.open_fill_groups_window).pack(fill=tk.X, pady=2)
-
+        
         # Голова
-        ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
-        ttk.Label(p, text="Голова", font=("Arial", 10, "bold")).pack(pady=5)
+        ttk.Separator(inner, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Label(inner, text="Голова", font=("Arial", 10, "bold")).pack(pady=5)
         for lbl, var, default in [("Масштаб:", "scale_var", "1.0"),
                                    ("Offset X:", "offset_x_var", "0"),
                                    ("Offset Y:", "offset_y_var", "-200"),
                                    ("Поворот (°):", "rotation_var", "0")]:
-            ttk.Label(p, text=lbl).pack(anchor=tk.W, padx=5)
+            ttk.Label(inner, text=lbl).pack(anchor=tk.W, padx=5)
             sv = tk.StringVar(value=default)
             setattr(self, var, sv)
-            ttk.Entry(p, textvariable=sv, width=10).pack(anchor=tk.W, padx=5, pady=2)
-        ttk.Button(p, text="Применить к кадру", command=self.ops.apply_head_settings).pack(pady=5)
-        ttk.Button(p, text="Применить ко всем", command=self.ops.apply_head_all_frames).pack(pady=2)
+            ttk.Entry(inner, textvariable=sv, width=10).pack(anchor=tk.W, padx=5, pady=2)
+        ttk.Button(inner, text="Применить к кадру", command=self.ops.apply_head_settings).pack(pady=5)
+        ttk.Button(inner, text="Применить ко всем", command=self.ops.apply_head_all_frames).pack(pady=2)
 
     # ==================================================================
     # Пресеты (UI)
