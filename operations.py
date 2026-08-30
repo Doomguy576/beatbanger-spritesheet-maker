@@ -180,18 +180,16 @@ class OperationsManager:
     # ==================================================================
 
     def add_fill_point(self, x, y):
-        """Добавить точку заливки и сразу применить к кадру"""
         fi = self.editor.current_frame
         if fi not in self.editor.preset.fill_points:
             self.editor.preset.fill_points[fi] = []
-
-        # Сохраняем копию кадра для undo
+        
         old_frame = self.editor.frames[fi].copy()
-
-        # Применяем заливку сразу к кадру
+        
         color_rgba = self._hex_to_rgba(self.editor.current_color)
-        ImageProcessor.flood_fill(self.editor.frames[fi], x, y, color_rgba)
-
+        alpha_threshold = self.editor.alpha_threshold_var.get()  # ← ДОБАВИТЬ
+        ImageProcessor.flood_fill(self.editor.frames[fi], x, y, color_rgba, alpha_threshold=alpha_threshold)  # ← ИЗМЕНИТЬ
+        
         pt = [x, y, self.editor.current_color]
         self.editor.preset.fill_points[fi].append(pt)
         self.editor.push_undo({"type": "fill_point", "frame": fi, "data": pt, "old_frame": old_frame})
@@ -382,10 +380,8 @@ class OperationsManager:
         self.editor._invalidate_cache()
 
     def _recolor_frame_from_points(self, fi):
-        """Пересчитать кадр из оригинала + кисть + все точки заливки"""
         self.editor.frames[fi] = self.editor.original_frames[fi].copy()
         
-        # Применяем кисть/ластик
         if fi in self.editor.preset.brush_strokes:
             for stroke in self.editor.preset.brush_strokes[fi]:
                 for seg in stroke:
@@ -396,11 +392,11 @@ class OperationsManager:
                         ImageProcessor.draw_brush_stroke(
                             self.editor.frames[fi], x1, y1, x2, y2, self._hex_to_rgba(ch), w)
         
-        # Применяем все точки заливки
         if fi in self.editor.preset.fill_points:
+            alpha_threshold = self.editor.alpha_threshold_var.get()  # ← ДОБАВИТЬ
             for pt in self.editor.preset.fill_points[fi]:
                 x, y, ch = pt
-                ImageProcessor.flood_fill(self.editor.frames[fi], x, y, self._hex_to_rgba(ch))
+                ImageProcessor.flood_fill(self.editor.frames[fi], x, y, self._hex_to_rgba(ch), alpha_threshold=alpha_threshold)  # ← ИЗМЕНИТЬ
 
     # ==================================================================
     # Голова

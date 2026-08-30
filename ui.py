@@ -73,6 +73,7 @@ class SpriteEditorUI:
         # Опции
         self.use_dilate = tk.BooleanVar(value=False)
         self.delete_on_all_frames = tk.BooleanVar(value=False)
+        self.alpha_threshold_var = tk.IntVar(value=100)
 
         # Видимость головы
         self.head_visible = True
@@ -310,6 +311,14 @@ class SpriteEditorUI:
                         variable=self.use_dilate, command=self.update_canvas).pack(anchor=tk.W, padx=5)
         ttk.Checkbutton(p, text="Удалять точки на всех кадрах",
                         variable=self.delete_on_all_frames).pack(anchor=tk.W, padx=5)
+        
+        # Порог заливки
+        ttk.Label(p, text="Порог заливки (alpha):").pack(anchor=tk.W, padx=5, pady=(10, 2))
+        alpha_frame = ttk.Frame(p)
+        alpha_frame.pack(fill=tk.X, padx=5)
+        self.alpha_scale = tk.Scale(alpha_frame, from_=0, to=255, orient=tk.HORIZONTAL,
+                                     variable=self.alpha_threshold_var, length=200, showvalue=1)
+        self.alpha_scale.pack(side=tk.LEFT)
 
         # Маски
         ttk.Separator(p, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)

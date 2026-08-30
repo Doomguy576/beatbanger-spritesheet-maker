@@ -51,9 +51,13 @@ class ImageProcessor:
         return Image.merge("RGBA", (r, g, b, a.filter(ImageFilter.MaxFilter(radius * 2 + 1))))
 
     @staticmethod
-    def flood_fill(image, x, y, color_rgba, thresh=0):
+    def flood_fill(image, x, y, color_rgba, thresh=0, alpha_threshold=30):
         """Собственный flood fill для RGBA.
-        Заливает области, похожие на стартовый пиксель."""
+        
+        alpha_threshold — порог прозрачности (0-255).
+        Пиксели с alpha < alpha_threshold считаются "прозрачными" и заливаются.
+        Пиксели с alpha >= alpha_threshold считаются контуром и не заливаются.
+        """
         if not (0 <= x < image.width and 0 <= y < image.height):
             return image
         
@@ -64,12 +68,13 @@ class ImageProcessor:
         if len(start_pixel) != 4:
             return image
         
-        # Определяем, что будем заливать:
-        # - Если alpha=0 — заливаем прозрачные пиксели
-        # - Если alpha>0 — заливаем пиксели похожего цвета
         from collections import deque
         queue = deque([(x, y)])
         visited = set()
+        
+        # Определяем режим заливки
+        start_alpha = start_pixel[3]
+        is_transparent_fill = (start_alpha < alpha_threshold)
         
         while queue:
             cx, cy = queue.popleft()
@@ -82,19 +87,26 @@ class ImageProcessor:
             if len(pixel) != 4:
                 continue
             
-            # Проверяем, похож ли пиксель на стартовый
-            if start_pixel[3] == 0:
-                # Стартовый пиксель прозрачный — заливаем только прозрачные
-                if pixel[3] != 0:  # Если alpha != 0 — это контур или другая заливка
-                    continue
+            if is_transparent_fill:
+                # Заливаем прозрачные области
+                # Пиксель должен быть "прозрачным" (alpha < alpha_threshold)
+                if pixel[3] >= alpha_threshold:
+                    continue  # Это контур или другая заливка
+                
+                # Если thresh > 0, проверяем похожие цвета
+                if thresh > 0:
+                    diff = (abs(pixel[0] - start_pixel[0]) +
+                           abs(pixel[1] - start_pixel[1]) +
+                           abs(pixel[2] - start_pixel[2]))
+                    if diff > thresh * 3:
+                        continue
             else:
-                # Стартовый пиксель цветной — заливаем похожие по цвету
-                # Сравниваем RGBA, но с допуском для alpha
+                # Заливаем цветные области (перекрашивание)
                 diff = (abs(pixel[0] - start_pixel[0]) +
                        abs(pixel[1] - start_pixel[1]) +
                        abs(pixel[2] - start_pixel[2]) +
                        abs(pixel[3] - start_pixel[3]))
-                if diff > thresh * 4:  # Порог различия
+                if diff > thresh * 4:
                     continue
             
             # Закрашиваем
